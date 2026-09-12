@@ -256,7 +256,7 @@ const BalanceChart: React.FC<{ data: ChartData[]; minBalance: number; color: str
             }}
             itemStyle={{ color: C.paper }}
             labelFormatter={(d) => `day ${d}`}
-            formatter={(v: number) => [v.toLocaleString(), 'balance']}
+            formatter={(v: any) => [v?.toLocaleString() || v, 'balance']}
           />
         </LineChart>
       </ResponsiveContainer>
