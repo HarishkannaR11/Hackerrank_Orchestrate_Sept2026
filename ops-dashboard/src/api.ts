@@ -1,4 +1,4 @@
-import { RunSummary, RunDetail, OutputRow, ReviewQueueItem, UsageReport } from './types';
+import type { RunSummary, OutputRow, ReviewQueueItem, UsageReport } from './types';
 
 // Mock Data
 const MOCK_RUNS: RunSummary[] = [
@@ -93,20 +93,20 @@ export const api = {
     }
     return run;
   },
-  getRunOutput: async (runId: string): Promise<OutputRow[]> => {
+  getRunOutput: async (_runId: string): Promise<OutputRow[]> => {
     await delay(400);
     return MOCK_OUTPUT;
   },
-  getReviewQueue: async (runId: string): Promise<ReviewQueueItem[]> => {
+  getReviewQueue: async (_runId: string): Promise<ReviewQueueItem[]> => {
     await delay(400);
     return MOCK_REVIEW_QUEUE;
   },
-  resolveReviewItem: async (runId: string, rowId: string, action: 'accept' | 'override', value?: string): Promise<void> => {
+  resolveReviewItem: async (_runId: string, rowId: string, _action: 'accept' | 'override', _value?: string): Promise<void> => {
     await delay(500);
     const idx = MOCK_REVIEW_QUEUE.findIndex(r => r.id === rowId);
     if (idx > -1) MOCK_REVIEW_QUEUE.splice(idx, 1);
   },
-  getUsageReport: async (runId: string): Promise<UsageReport> => {
+  getUsageReport: async (_runId: string): Promise<UsageReport> => {
     await delay(400);
     return MOCK_USAGE;
   }
