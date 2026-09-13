@@ -1,0 +1,9 @@
+langgraph>=1.2
+langsmith>=0.8
+langchain-core>=1.4
+langchain-groq>=1.1
+groq>=0.37
+python-dotenv>=1.2
+pandas>=2.3
+pillow>=11.0
+fastapi>=0.136

@@ -142,9 +142,16 @@ def resolve_event_chains(raw_events: Iterable[dict]) -> List[dict]:
     return resolved
 
 
-def build_cash_events(dataset: Dataset, user_id: str, home_currency: str, start: date) -> List[CashEvent]:
+def build_cash_events(
+    dataset: Dataset,
+    user_id: str,
+    home_currency: str,
+    start: date,
+    raw_events: Optional[List[dict]] = None,
+) -> List[CashEvent]:
     events = []
-    for raw in resolve_event_chains(dataset.events_by_user[user_id]):
+    source = raw_events if raw_events is not None else dataset.events_by_user[user_id]
+    for raw in resolve_event_chains(source):
         status = raw.get("status", "")
         event_type = raw.get("event_type", "")
         direction = raw.get("direction", "")
@@ -446,15 +453,18 @@ def validate_row(row: dict, request: dict, dataset: Dataset) -> None:
         raise ValueError(f"{request['request_id']} affordable_now date mismatch")
 
 
-def decide(dataset: Dataset, request: dict) -> dict:
-    profile = dataset.profiles[request["user_id"]]
+def build_row(dataset: Dataset, request: dict, profile: dict, events: List[CashEvent]) -> Tuple[dict, dict]:
+    """Deterministic forecast -> candidates -> rank -> compose, pre-validation.
+
+    Returns (row, facts) where facts carries the numbers an explanation may
+    reference (used by the graph's explanation agent to ground its text).
+    """
     req_date = parse_date(request["request_date"])
     deadline = parse_date(request["desired_completion_date"])
     requested = parse_float(request["requested_amount"], 0.0) or 0.0
     balance = parse_float(profile["current_available_balance"], 0.0) or 0.0
     min_keep = parse_float(profile["minimum_balance_to_keep"], 0.0) or 0.0
     currency = profile["home_currency"]
-    events = build_cash_events(dataset, request["user_id"], currency, req_date)
 
     safe_now = safe_amount_today(events, req_date, balance, min_keep, requested)
     full_date = first_safe_full_date(events, req_date, balance, min_keep, requested)
@@ -496,6 +506,26 @@ def decide(dataset: Dataset, request: dict) -> dict:
         "spending_changes_needed": changes,
         "decision_explanation": explain(currency, status, method if chosen else "wait", safe_now, requested, low, min_keep, full_date, changes),
     }
+    facts = {
+        "currency": currency,
+        "status": status,
+        "method": row["recommended_payment_method"],
+        "amount_safe_to_pay": safe_now,
+        "requested_amount": requested,
+        "forecast_low": low,
+        "min_balance_to_keep": min_keep,
+        "earliest_date_for_full_payment": earliest,
+        "spending_changes_needed": changes,
+    }
+    return row, facts
+
+
+def decide(dataset: Dataset, request: dict, raw_events_override: Optional[List[dict]] = None) -> dict:
+    profile = dataset.profiles[request["user_id"]]
+    req_date = parse_date(request["request_date"])
+    currency = profile["home_currency"]
+    events = build_cash_events(dataset, request["user_id"], currency, req_date, raw_events=raw_events_override)
+    row, _facts = build_row(dataset, request, profile, events)
     validate_row(row, request, dataset)
     return row
 

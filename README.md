@@ -18,97 +18,163 @@ Read [`problem_statement.md`](./problem_statement.md) for the full task spec, in
 
 ---
 
-## Quick Start
+## Our Solution — Setup
 
-Clone the repository and move into the project directory:
+### 1. Install dependencies
 
 ```bash
-git clone https://github.com/interviewstreet/hackerrank-orchestrate-september26.git
-cd hackerrank-orchestrate-september26
+pip install -r requirements.txt
 ```
 
-The project is organized into a Python backend and a React frontend:
+### 2. Configure API keys
 
-- `backend/` contains the financial decision engine, API, tests, and usage report.
-- `frontend/` contains the Vite/React ops dashboard.
-- `code/main.py` is a small compatibility launcher for HackerRank-style runs.
-
-Your solution must:
-
-- Read the input files from `dataset/`
-- Generate one prediction for every request
-- Write the final predictions to `output.csv` in the repository root
-
-Run the prediction pipeline with either command:
+Create/edit `backend/.env`:
 
 ```bash
-python3 code/main.py
-# or
-python3 backend/main.py
+GROQ_API=your_groq_api_key_here          # required — powers the LLM agents
+LANGSMITH_API_KEY=your_langsmith_key     # optional — enables LangGraph run tracing
 ```
 
-After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
+Without `GROQ_API`, the pipeline still runs end-to-end and produces a fully valid
+`output.csv` — the LLM agents (image extraction, message parsing, explanation
+rewriting) just no-op and the deterministic engine's own text/values are used
+instead. Without `LANGSMITH_API_KEY`, everything runs identically; you just don't
+get traces at [smith.langchain.com](https://smith.langchain.com).
 
-Run the backend API with:
+### 3. Generate `output.csv` (the graded artifact)
 
 ```bash
-uvicorn backend.api:app --reload
+python -m backend.graph
 ```
 
-Run the frontend dashboard with:
+This runs the full multi-agent pipeline against every row in
+`dataset/requests.csv`, writes `output.csv` to the repo root, and writes
+`evaluation/usage_report.md` summarizing the real token usage/cost of that run.
+
+A pure-deterministic fallback (no LLM calls, no `.env` needed) is also available:
 
 ```bash
+python backend/main.py
+```
+
+### 4. (Optional) Run the ops dashboard
+
+Two processes, in separate terminals:
+
+```bash
+# Terminal 1 — API server
+uvicorn backend.api:app --reload --port 8123
+
+# Terminal 2 — React dashboard
 cd frontend
 npm install
-npm run dev
+VITE_API_BASE_URL=http://127.0.0.1:8123 npm run dev
 ```
+
+Open the printed Vite URL and click **Start new run** to watch the pipeline
+execute live, with tabs for the output table, the review queue (low-confidence
+or injection-flagged extractions needing human sign-off), and the usage report.
+
+---
+
+## Our Approach
+
+We built this as a **hybrid deterministic-core / multi-agent system**, orchestrated
+with **LangGraph** and traced with **LangSmith**, on top of **Groq** (via
+`langchain-groq`) for the LLM calls.
+
+**Why hybrid, not end-to-end agentic:** the graded fields (`amount_safe_to_pay`,
+`affordability_status`, the ranking tiebreak, the 90-day safety check) are exact,
+reproducible numeric/date rules. An LLM is unreliable at that kind of arithmetic
+and its output can't be guaranteed reproducible across runs. So the numeric core
+stays in plain deterministic Python (`backend/main.py`), and LangGraph is used
+only to orchestrate the three places where genuine unstructured-data reasoning
+is required.
+
+### Two LangGraph graphs (`backend/graph.py`)
+
+1. **Ledger reconstruction graph** — runs once per user:
+   `load context → image agent (conditional) → message agent (conditional) → apply deltas`
+   - **Image agent**: reads a linked receipt/screenshot PNG to fill in a blank
+     `amount` on a financial event (vision LLM call).
+   - **Message agent**: parses a message linked to a financial event into a
+     structured delta — `cancel | amend | delay | confirm | clarify | no_op`.
+   - Both are skipped entirely (conditional edges) when a user has no blank
+     amounts / no linked messages, so cost tracks actual ambiguity in the data.
+   - Both agents treat their input as **untrusted data**: a regex guard
+     (`backend/injection_guard.py`) plus explicit prompt instructions stop
+     embedded "ignore previous instructions"-style text from being followed,
+     and anything low-confidence or flagged goes to a **review queue**
+     surfaced in the dashboard instead of being silently applied.
+
+2. **Decision graph** — runs once per request:
+   `compute (deterministic forecast → candidates → rank) → explain (LLM) → validate`
+   - `compute` reuses `backend/main.py`'s proven 90-day forecast, candidate
+     generation, and the spec's 6-level ranking tiebreak.
+   - `explain` asks an LLM to rewrite the deterministic explanation in clearer
+     prose, but a grounding check rejects the rewrite (falling back to the
+     deterministic text) if it drops any required number/currency — so the
+     explanation can never invent a fact.
+   - `validate` re-checks the row against the spec's bounds/schema rules; on
+     failure it falls back to the plain deterministic decision (no LLM
+     influence at all), which is guaranteed to validate.
+
+### Efficiency
+
+- Every LLM call (image, message, explanation) is cached in
+  `backend/extraction_cache.sqlite`, keyed by item id (+ a content hash for
+  explanations), so re-running the pipeline after a code change doesn't
+  re-spend tokens on unaffected requests.
+- `evaluation/usage_report.md` is generated from real, tracked token counts of
+  the run that produced `output.csv` — not estimated after the fact.
+
+### Known limitation
+
+The available Groq API key/plan does not currently expose a vision-capable
+model (`client.models.list()` returns text-only models). Blank-amount events
+whose image can't be read are left blank rather than guessed (per the spec's
+"never treat a blank amount as zero" rule) and surfaced in the review queue for
+manual resolution. Swap `GROQ_VISION_MODEL` in `backend/llm_agents.py` once a
+vision model is available on the account.
 
 ## Important File Locations
 
 ```text
-dataset/        Input data and the blank output template. Do not modify the input data.
-backend/        Python decision engine, FastAPI app, tests, and evaluation report.
-frontend/       React/Vite operations dashboard.
-code/           Compatibility launcher for `python3 code/main.py`.
-output.csv      Final generated predictions in the repository root.
-code.zip        ZIP file containing your complete solution for submission.
+dataset/                    Input data and the blank output template. Do not modify.
+backend/
+  main.py                   Deterministic engine: forecast, candidates, ranking, validation.
+  graph.py                  LangGraph orchestration (ledger graph + decision graph).
+  llm_agents.py             The 3 LLM agents (image extraction, message parsing, explanation).
+  injection_guard.py        Regex guard against prompt injection in untrusted content.
+  usage_tracker.py          Real per-model token/cost tracking -> evaluation/usage_report.md.
+  extraction_cache.py       SQLite cache so repeated runs don't re-spend LLM tokens.
+  api.py                    FastAPI wrapper around graph.py for the ops dashboard.
+frontend/                   React/Vite operations dashboard (talks to backend/api.py).
+code/                       Compatibility launcher for `python3 code/main.py`.
+requirements.txt            Python dependencies (langgraph, langsmith, langchain-groq, ...).
+output.csv                  Final generated predictions in the repository root.
+evaluation/usage_report.md  Token usage & cost report for the run that produced output.csv.
+code.zip                    ZIP file containing your complete solution for submission.
 ```
 
 The blank template at `dataset/output.csv` is provided as a reference. Your final generated file must be the root-level `output.csv`.
 
 ---
 
-## Repository Layout
-
-Current working layout:
+## Dataset Layout
 
 ```text
-backend/        FastAPI API, deterministic Python engine, tests, evaluation report.
-frontend/       React/TypeScript ops dashboard.
-code/main.py    Compatibility launcher for HackerRank-style runs.
-dataset/        Provided input data.
-output.csv      Generated predictions.
-```
-
-```text
-.
-├── AGENTS.md                         # Rules for AI coding tools + transcript logging
-├── problem_statement.md              # Full challenge statement
-├── README.md                         # You are here
-├── code/                             # Your solution code
-├── output.csv                        # Final generated predictions
-└── dataset/
-    ├── requests.csv                  # 250 requests to evaluate — predict these
-    ├── output.csv                    # Blank submission template
-    ├── sample_requests.csv           # 25 solved examples
-    ├── financial_profiles.csv        # Balances, minimum balance, priorities, preferences
-    ├── financial_events.csv          # Historical, pending, and confirmed transactions
-    ├── request_payment_options.csv   # Payment options available per request
-    ├── exchange_rates.csv            # Fixed, dated conversion rates
-    ├── messages.csv                  # Messages tied to users, requests, or events
-    ├── images.csv                    # Payroll letters, statements, bills, receipts
-    └── media/
-        └── images/
+dataset/
+├── requests.csv                  # 250 requests to evaluate — predict these
+├── output.csv                    # Blank submission template
+├── sample_requests.csv           # 25 solved examples
+├── financial_profiles.csv        # Balances, minimum balance, priorities, preferences
+├── financial_events.csv          # Historical, pending, and confirmed transactions
+├── request_payment_options.csv   # Payment options available per request
+├── exchange_rates.csv            # Fixed, dated conversion rates
+├── messages.csv                  # Messages tied to users, requests, or events
+├── images.csv                    # Payroll letters, statements, bills, receipts
+└── media/images/                 # PNGs referenced by images.csv
 ```
 
 Only `dataset/requests.csv` requires predictions. Everything else is context. Join user records with `user_id`, request records with `request_id`, supporting evidence with `related_event_id`, and exchange rates with the rate date and currency pair.
