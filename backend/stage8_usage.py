@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-USAGE_REPORT_PATH = BASE_DIR / 'evaluation' / 'usage_report.md'
-USAGE_DATA_PATH = BASE_DIR / 'evaluation' / 'usage_data.json'
+USAGE_REPORT_PATH = BASE_DIR / 'backend' / 'evaluation' / 'usage_report.md'
+USAGE_DATA_PATH = BASE_DIR / 'backend' / 'evaluation' / 'usage_data.json'
 
 class UsageLogger:
     def __init__(self):

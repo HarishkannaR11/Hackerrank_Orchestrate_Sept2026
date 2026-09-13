@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / 'code' / 'extraction_cache.sqlite'
+DB_PATH = BASE_DIR / 'backend' / 'extraction_cache.sqlite'
 
 class ExtractionCache:
     def __init__(self, db_path=DB_PATH):

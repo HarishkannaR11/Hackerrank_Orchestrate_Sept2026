@@ -1,8 +1,12 @@
 import json
 import re
 from typing import Optional
-from anthropic import Anthropic
-from extraction_cache import ExtractionCache
+from groq import Groq
+
+try:
+    from .extraction_cache import ExtractionCache
+except ImportError:
+    from extraction_cache import ExtractionCache
 
 # Regex pattern for deterministic injection defense
 INJECTION_PATTERN = re.compile(
@@ -16,8 +20,8 @@ def check_injection(text: str) -> bool:
     return bool(INJECTION_PATTERN.search(text))
 
 class ExtractionService:
-    def __init__(self, api_key: str, model_version: str = "claude-3-5-sonnet-20240620", cache_db: Optional[str] = None):
-        self.client = Anthropic(api_key=api_key) if api_key else None
+    def __init__(self, api_key: str, model_version: str = "llama-3.3-70b-versatile", cache_db: Optional[str] = None):
+        self.client = Groq(api_key=api_key) if api_key else None
         self.model_version = model_version
         self.cache = ExtractionCache(cache_db) if cache_db else ExtractionCache()
 
@@ -32,29 +36,27 @@ class ExtractionService:
             return {}
 
         # Actually call LLM
-        response = self.client.messages.create(
+        response = self.client.chat.completions.create(
             model=self.model_version,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
             temperature=0,
-            max_tokens=150
+            max_tokens=250,
+            response_format={"type": "json_object"}
         )
         
         try:
-            # Assuming the response is plain text JSON. Extract it if it's in code blocks.
-            content = response.content[0].text
-            json_str = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_str:
-                result = json.loads(json_str.group(0))
-            else:
-                result = json.loads(content)
+            content = response.choices[0].message.content
+            result = json.loads(content)
                 
             # Log usage if logger provided
             if usage_logger:
                 usage_logger.log_call(
                     model=self.model_version,
-                    input_tokens=response.usage.input_tokens,
-                    output_tokens=response.usage.output_tokens
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens
                 )
                 
         except (json.JSONDecodeError, AttributeError):

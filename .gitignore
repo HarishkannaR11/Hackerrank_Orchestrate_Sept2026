@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.benchmarks/
+node_modules/
+dist/
+.env
+log.txt
+output.csv
+code.zip
+backend/extraction_cache.sqlite
+backend/llm_cache.json
+backend/evaluation/usage_data.json
+frontend/dist/
+frontend/node_modules/

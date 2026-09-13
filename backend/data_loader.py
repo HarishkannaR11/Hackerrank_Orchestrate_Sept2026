@@ -6,7 +6,7 @@ from pathlib import Path
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / 'dataset'
-CACHE_FILE = BASE_DIR / 'code' / 'llm_cache.json'
+CACHE_FILE = BASE_DIR / 'backend' / 'llm_cache.json'
 
 class DataLoader:
     def __init__(self):

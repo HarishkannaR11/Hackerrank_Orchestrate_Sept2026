@@ -27,7 +27,11 @@ git clone https://github.com/interviewstreet/hackerrank-orchestrate-september26.
 cd hackerrank-orchestrate-september26
 ```
 
-Build your solution in `code/main.py`, or use another language and document its entry point clearly.
+The project is organized into a Python backend and a React frontend:
+
+- `backend/` contains the financial decision engine, API, tests, and usage report.
+- `frontend/` contains the Vite/React ops dashboard.
+- `code/main.py` is a small compatibility launcher for HackerRank-style runs.
 
 Your solution must:
 
@@ -35,19 +39,37 @@ Your solution must:
 - Generate one prediction for every request
 - Write the final predictions to `output.csv` in the repository root
 
-Run the starter Python entry point with:
+Run the prediction pipeline with either command:
 
 ```bash
 python3 code/main.py
+# or
+python3 backend/main.py
 ```
 
 After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
+
+Run the backend API with:
+
+```bash
+uvicorn backend.api:app --reload
+```
+
+Run the frontend dashboard with:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
 ## Important File Locations
 
 ```text
 dataset/        Input data and the blank output template. Do not modify the input data.
-code/           Your solution code.
+backend/        Python decision engine, FastAPI app, tests, and evaluation report.
+frontend/       React/Vite operations dashboard.
+code/           Compatibility launcher for `python3 code/main.py`.
 output.csv      Final generated predictions in the repository root.
 code.zip        ZIP file containing your complete solution for submission.
 ```
@@ -57,6 +79,16 @@ The blank template at `dataset/output.csv` is provided as a reference. Your fina
 ---
 
 ## Repository Layout
+
+Current working layout:
+
+```text
+backend/        FastAPI API, deterministic Python engine, tests, evaluation report.
+frontend/       React/TypeScript ops dashboard.
+code/main.py    Compatibility launcher for HackerRank-style runs.
+dataset/        Provided input data.
+output.csv      Generated predictions.
+```
 
 ```text
 .
